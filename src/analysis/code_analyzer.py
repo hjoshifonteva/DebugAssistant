@@ -1,146 +1,241 @@
+from typing import Dict, Optional
 import ast
-from typing import Dict, List, Optional
+import re
 
 
 class CodeAnalyzer:
-    def analyze(self, code: str) -> Dict:
-        """Perform static code analysis"""
+    def analyze(self, code: str, language: Optional[str] = None) -> Dict:
+        """Analyze code for common issues and patterns"""
+        try:
+            if language is None:
+                language = self._detect_language(code)
+
+            if language == "python":
+                return self._analyze_python(code)
+            elif language == "javascript":
+                return self._analyze_javascript(code)
+            else:
+                return self._analyze_generic(code)
+
+        except Exception as e:
+            print(f"Error in code analysis: {str(e)}")
+            return {
+                "language": language or "unknown",
+                "issues": [],
+                "complexity": "unknown",
+                "error": str(e)
+            }
+
+    def _detect_language(self, code: str) -> str:
+        """Detect programming language from code"""
+        # Check for Python syntax
+        try:
+            ast.parse(code)
+            return "python"
+        except:
+            pass
+
+        # Check for JavaScript syntax
+        js_indicators = [
+            "const ", "let ", "var ", "function ", "=>", "console.log",
+            "document.", "window.", "import from", "export "
+        ]
+        if any(indicator in code for indicator in js_indicators):
+            return "javascript"
+
+        return "unknown"
+
+    def _analyze_python(self, code: str) -> Dict:
+        """Analyze Python code"""
         try:
             tree = ast.parse(code)
-            return {
-                "syntax_check": self._check_syntax(tree),
-                "complexity": self._analyze_complexity(tree),
-                "patterns": self._identify_patterns(tree),
-                "imports": self._analyze_imports(tree),
-                "potential_issues": self._find_potential_issues(tree)
+
+            analysis = {
+                "language": "python",
+                "issues": [],
+                "complexity": self._calculate_complexity(tree),
+                "variables": self._extract_variables(tree),
+                "functions": self._analyze_functions(tree),
+                "imports": self._analyze_imports(tree)
             }
+
+            # Check for common issues
+            self._check_naming_conventions(tree, analysis["issues"])
+            self._check_error_handling(tree, analysis["issues"])
+            self._check_code_style(code, analysis["issues"])
+
+            return analysis
+
         except SyntaxError as e:
             return {
-                "error": "syntax_error",
-                "message": str(e),
-                "line": e.lineno,
-                "offset": e.offset
+                "language": "python",
+                "issues": [{
+                    "type": "syntax_error",
+                    "message": str(e),
+                    "line": e.lineno,
+                    "offset": e.offset
+                }],
+                "complexity": "unknown"
             }
         except Exception as e:
             return {
-                "error": "analysis_error",
-                "message": str(e)
+                "language": "python",
+                "issues": [{
+                    "type": "analysis_error",
+                    "message": str(e)
+                }],
+                "complexity": "unknown"
             }
 
-    def _check_syntax(self, tree: ast.AST) -> Dict:
-        """Check for syntax issues"""
-        issues = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Try):
-                # Check for bare except clauses
-                for handler in node.handlers:
-                    if handler.type is None:
-                        issues.append({
-                            "type": "bare_except",
-                            "line": handler.lineno,
-                            "message": "Avoid using bare 'except' clauses"
-                        })
-            elif isinstance(node, ast.Compare):
-                # Check for potential type comparison issues
-                if isinstance(node.ops[0], (ast.Is, ast.IsNot)):
-                    issues.append({
-                        "type": "type_comparison",
-                        "line": node.lineno,
-                        "message": "Use '==' instead of 'is' for value comparison"
-                    })
-        return {"issues": issues}
-
-    def _analyze_complexity(self, tree: ast.AST) -> Dict:
-        """Analyze code complexity"""
-        complexity = {
-            "loops": 0,
-            "branches": 0,
-            "nested_depth": 0,
-            "function_count": 0
+    def _analyze_javascript(self, code: str) -> Dict:
+        """Analyze JavaScript code"""
+        analysis = {
+            "language": "javascript",
+            "issues": [],
+            "complexity": "medium",  # Placeholder
+            "patterns": self._detect_js_patterns(code)
         }
 
-        current_depth = 0
-        max_depth = 0
+        # Check for common JS issues
+        self._check_js_best_practices(code, analysis["issues"])
 
+        return analysis
+
+    def _analyze_generic(self, code: str) -> Dict:
+        """Generic code analysis for unknown languages"""
+        return {
+            "language": "unknown",
+            "issues": [],
+            "complexity": self._estimate_complexity(code),
+            "metrics": {
+                "lines": len(code.splitlines()),
+                "characters": len(code),
+                "words": len(re.findall(r'\w+', code))
+            }
+        }
+
+    def _calculate_complexity(self, tree: ast.AST) -> str:
+        """Calculate code complexity score"""
+        complexity = 0
         for node in ast.walk(tree):
-            if isinstance(node, (ast.For, ast.While)):
-                complexity["loops"] += 1
-                current_depth += 1
-                max_depth = max(max_depth, current_depth)
-            elif isinstance(node, ast.If):
-                complexity["branches"] += 1
-                current_depth += 1
-                max_depth = max(max_depth, current_depth)
-            elif isinstance(node, ast.FunctionDef):
-                complexity["function_count"] += 1
+            if isinstance(node, (ast.If, ast.For, ast.While, ast.FunctionDef)):
+                complexity += 1
 
-        complexity["nested_depth"] = max_depth
-        return complexity
+        if complexity < 5:
+            return "low"
+        elif complexity < 10:
+            return "medium"
+        else:
+            return "high"
 
-    def _identify_patterns(self, tree: ast.AST) -> List[Dict]:
-        """Identify common code patterns"""
-        patterns = []
-
-        # Check for resource management patterns
+    def _extract_variables(self, tree: ast.AST) -> list:
+        """Extract variable names and types"""
+        variables = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.With):
-                patterns.append({
-                    "type": "resource_management",
-                    "line": node.lineno,
-                    "description": "Resource management using context manager"
-                })
-            elif isinstance(node, ast.Try):
-                patterns.append({
-                    "type": "error_handling",
-                    "line": node.lineno,
-                    "description": "Error handling pattern"
-                })
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        variables.append({
+                            "name": target.id,
+                            "line": target.lineno
+                        })
+        return variables
 
-        return patterns
+    def _analyze_functions(self, tree: ast.AST) -> list:
+        """Analyze function definitions"""
+        functions = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                functions.append({
+                    "name": node.name,
+                    "args": len(node.args.args),
+                    "line": node.lineno,
+                    "complexity": self._calculate_function_complexity(node)
+                })
+        return functions
 
-    def _analyze_imports(self, tree: ast.AST) -> List[Dict]:
-        """Analyze imports"""
+    def _analyze_imports(self, tree: ast.AST) -> list:
+        """Analyze import statements"""
         imports = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                for name in node.names:
-                    imports.append({
-                        "type": "import",
-                        "name": name.name,
-                        "line": node.lineno
-                    })
+                imports.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom):
-                imports.append({
-                    "type": "import_from",
-                    "module": node.module,
-                    "names": [name.name for name in node.names],
-                    "line": node.lineno
-                })
+                imports.append(f"{node.module}")
         return imports
 
-    def _find_potential_issues(self, tree: ast.AST) -> List[Dict]:
-        """Find potential code issues"""
-        issues = []
-
+    def _check_naming_conventions(self, tree: ast.AST, issues: list):
+        """Check Python naming conventions"""
         for node in ast.walk(tree):
-            # Check for mutable default arguments
             if isinstance(node, ast.FunctionDef):
-                for default in node.args.defaults:
-                    if isinstance(default, (ast.List, ast.Dict, ast.Set)):
-                        issues.append({
-                            "type": "mutable_default",
-                            "line": node.lineno,
-                            "message": "Mutable default argument used"
-                        })
+                if not node.name.islower():
+                    issues.append({
+                        "type": "naming_convention",
+                        "message": f"Function '{node.name}' should use lowercase with underscores",
+                        "line": node.lineno
+                    })
 
-            # Check for potentially dangerous operations
-            elif isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name):
-                    if node.func.id in ["eval", "exec"]:
-                        issues.append({
-                            "type": "dangerous_call",
-                            "line": node.lineno,
-                            "message": f"Potentially dangerous {node.func.id}() call"
-                        })
+    def _check_error_handling(self, tree: ast.AST, issues: list):
+        """Check error handling patterns"""
+        has_try = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Try):
+                has_try = True
+                if not node.handlers:
+                    issues.append({
+                        "type": "error_handling",
+                        "message": "Empty try block found",
+                        "line": node.lineno
+                    })
 
-        return issues
+        if not has_try:
+            issues.append({
+                "type": "suggestion",
+                "message": "Consider adding error handling with try-except blocks"
+            })
+
+    def _check_code_style(self, code: str, issues: list):
+        """Check code style issues"""
+        lines = code.splitlines()
+        for i, line in enumerate(lines, 1):
+            if len(line.strip()) > 100:
+                issues.append({
+                    "type": "style",
+                    "message": "Line too long (>100 characters)",
+                    "line": i
+                })
+
+    def _detect_js_patterns(self, code: str) -> list:
+        """Detect JavaScript patterns"""
+        patterns = []
+        if "new Promise" in code:
+            patterns.append("promise_usage")
+        if "async" in code and "await" in code:
+            patterns.append("async_await")
+        if "addEventListener" in code:
+            patterns.append("event_listener")
+        return patterns
+
+    def _check_js_best_practices(self, code: str, issues: list):
+        """Check JavaScript best practices"""
+        if "var " in code:
+            issues.append({
+                "type": "best_practice",
+                "message": "Use 'const' or 'let' instead of 'var'"
+            })
+
+        if "===" not in code and "==" in code:
+            issues.append({
+                "type": "best_practice",
+                "message": "Use strict equality (===) instead of =="
+            })
+
+    def _estimate_complexity(self, code: str) -> str:
+        """Estimate code complexity for unknown languages"""
+        lines = len(code.splitlines())
+        if lines < 50:
+            return "low"
+        elif lines < 200:
+            return "medium"
+        else:
+            return "high"

@@ -7,19 +7,19 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-
 class GPTClient:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model = "gpt-4"
         self.max_tokens = 2000
         self.temperature = 0.7
+        self.request_count = 0
 
     async def analyze_code(self, code: str, error: Optional[str] = None, context: Optional[str] = None) -> Dict:
         """Analyze code and provide debugging suggestions"""
+        self.request_count += 1
         messages = [
-            {"role": "system",
-             "content": "You are an expert programming assistant specializing in debugging and code analysis."},
+            {"role": "system", "content": "You are an expert programming assistant specializing in debugging and code analysis."},
             {"role": "user", "content": self._create_analysis_prompt(code, error, context)}
         ]
 
@@ -42,9 +42,9 @@ class GPTClient:
 
     async def suggest_fix(self, code: str, analysis: Dict, similar_patterns: List[Dict]) -> Dict:
         """Generate fix suggestions based on analysis and similar patterns"""
+        self.request_count += 1
         messages = [
-            {"role": "system",
-             "content": "You are an expert programming assistant specializing in code fixes and improvements."},
+            {"role": "system", "content": "You are an expert programming assistant specializing in code fixes and improvements."},
             {"role": "user", "content": self._create_fix_prompt(code, analysis, similar_patterns)}
         ]
 
@@ -67,6 +67,7 @@ class GPTClient:
             }
 
     def _create_analysis_prompt(self, code: str, error: Optional[str], context: Optional[str]) -> str:
+        """Create prompt for code analysis"""
         prompt = f"""
         Please analyze the following code:
         ```
@@ -91,6 +92,7 @@ class GPTClient:
         return prompt
 
     def _create_fix_prompt(self, code: str, analysis: Dict, similar_patterns: List[Dict]) -> str:
+        """Create prompt for fix suggestions"""
         patterns_str = json.dumps(similar_patterns, indent=2)
         prompt = f"""
         Given this code:
@@ -133,8 +135,11 @@ class GPTClient:
 
             return json.loads(response)
         except json.JSONDecodeError:
-            # Fallback if response isn't valid JSON
             return {
                 "error": "Failed to parse response",
                 "raw_response": response
             }
+
+    def get_request_count(self) -> int:
+        """Get the total number of requests made"""
+        return self.request_count
